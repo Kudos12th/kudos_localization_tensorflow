@@ -96,7 +96,6 @@ if __name__ == "__main__":
         transforms.Normalize(mean=stats[0], std=np.sqrt(stats[1]))])
     target_transform = transforms.Lambda(lambda x: torch.from_numpy(x).float())
 
-    # TODO: pose_stats??
     # read mean and stdev for un-normalizing predictions
     pose_stats_file = osp.join(opt.data_dir, opt.dataset, opt.scene, 'pose_stats.txt')
     pose_m, pose_s = np.loadtxt(pose_stats_file)  # mean and stdev
