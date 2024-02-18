@@ -2,21 +2,25 @@ import os
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4,5,6,7"
 
-import torch
-import sys
-import time
-import os.path as osp
+import os
+import tensorflow as tf
+from tensorflow.keras import layers
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.losses import Mean
+from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
+from tensorflow.keras.models import load_model
+
 import numpy as np
+import matplotlib.pyplot as plt
+from dataloaders import Robocup
+from utils import AtLocCriterion, AverageMeter, Logger, load_state_dict
 
 from tensorboardX import SummaryWriter
 from tools.options import Options
 from network.atloc import AtLoc
-from torchvision import transforms, models
-from utils import AtLocCriterion, AverageMeter, Logger, load_state_dict
-from dataloaders import Robocup
-from torch.utils.data import DataLoader
-from torch.autograd import Variable
 
+from tensorflow.keras.applications import ResNet18  # 또는 ResNet18, ResNet34, ResNet50 등 사용 가능
+from tensorflow.keras import Sequential
 # Config
 opt = Options().parse()
 cuda = torch.cuda.is_available()
@@ -27,7 +31,11 @@ print('Logging to {:s}'.format(logfile))
 sys.stdout = stdout
 
 # Model
-feature_extractor = models.resnet18(weights=None)
+feature_extractor = Sequential([
+    ResNet18(weights=None, include_top=False, input_shape=(opt.input_channels, opt.cropsize, opt.cropsize)),
+    tf.keras.layers.GlobalAveragePooling2D(),
+    tf.keras.layers.Dense(feat_dim)
+])
 atloc = AtLoc(feature_extractor, droprate=opt.train_dropout, pretrained=True, lstm=opt.lstm)
 if opt.model == 'AtLoc':
     model = atloc
@@ -42,8 +50,12 @@ param_list = [{'params': model.parameters()}]
 if hasattr(train_criterion, 'sax') and hasattr(train_criterion, 'saq'):
     print('learn_beta')
     param_list.append({'params': [train_criterion.sax, train_criterion.saq]})
-optimizer = torch.optim.Adam(param_list, lr=opt.lr, weight_decay=opt.weight_decay)
 
+optimizer = Adam(learning_rate=opt.lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
+train_criterion = AtLocCriterion(saq=opt.beta, learn_beta=True)
+val_criterion = AtLocCriterion()
+
+model.compile(optimizer=optimizer, loss=train_criterion)
 stats_file = osp.join(opt.data_dir, opt.dataset, opt.scene, 'stats.txt')
 stats = np.loadtxt(stats_file)
 
